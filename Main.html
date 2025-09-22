@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Playground de Física com Giro Contínuo</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #222;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: Arial, sans-serif;
+      color: white;
+    }
+
+    #container {
+      position: relative;
+      width: 800px;
+      height: 600px;
+    }
+
+    #canvas {
+      background-color: #333;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: transparent;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+      color: black;
+      pointer-events: none;
+    }
+
+    #controls p {
+      margin: 5px 0;
+      text-shadow: 0 0 2px white;
+    }
+
+    #controls strong {
+      text-shadow: 0 0 3px white;
+    }
+
+    #speed-display {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    .hamburger-icon {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      width: 40px;
+      height: 40px;
+      cursor: pointer;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hamburger-icon::before,
+    .hamburger-icon::after,
+    .hamburger-icon span {
+      content: '';
+      display: block;
+      width: 24px;
+      height: 3px;
+      background-color: white;
+      border-radius: 3px;
+    }
+
+    #settings-menu {
+      position: absolute;
+      bottom: 60px;
+      right: 10px;
+      background: rgba(0,0,0,0.9);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 10;
+      width: 220px;
+    }
+
+    #settings-menu.hidden {
+      display: none;
+    }
+
+    #settings-menu label {
+      display: flex;
+      flex-direction: column;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <div id="controls">
+      <p><strong>Controles:</strong></p>
+      <p>E = Criar bola</p>
+      <p>H = Criar quadrado</p>
+      <p>K = Criar triângulo</p>
+      <p>S = Girar objeto (segure para aumentar velocidade)</p>
+      <p>B = Buraco negro (segure para ativar)</p>
+      <p>Arraste com mouse para mover</p>
+    </div>
+
+    <div id="speed-display">Velocidade: 0</div>
+
+    <div id="gear-icon" class="hamburger-icon">
+      <span></span>
+    </div>
+    <div id="settings-menu" class="hidden">
+      <label>Força do buraco negro: <input type="range" id="force-slider" min="0.0001" max="0.01" step="0.0001" value="0.001"></label>
+      <label>Alcance: <input type="range" id="range-slider" min="50" max="800" step="10" value="300"></label>
+      <label>Tamanho do buraco negro: <input type="range" id="size-slider" min="10" max="200" step="5" value="30"></label>
+      <label>Velocidade inicial de giro: <input type="number" id="spin-start" min="1" max="1000" step="1" value="20"></label>
+      <label>Nível de saltitante: <input type="range" id="bounciness" min="0" max="1" step="0.1" value="0.7"></label>
+      <label>Chão escorregadio: <input type="range" id="floor-friction" min="0" max="1" step="0.1" value="0"></label>
+      <label>Gravidade: <input type="range" id="gravity-slider" min="0" max="1" step="0.1" value="0"></label>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
+  <script>
+    const { Engine, Render, World, Bodies, Body, Mouse, MouseConstraint, Events, Composite, Vertices } = Matter;
+
+    const initialGravity = { x: 0, y: 0.5 };
+    const engine = Engine.create({ gravity: initialGravity, enableSleeping: true });
+    const canvas = document.getElementById('canvas');
+
+    const render = Render.create({
+      canvas: canvas,
+      engine: engine,
+      options: {
+        width: 800,
+        height: 600,
+        wireframes: false,
+        background: '#333',
+        showAngleIndicator: true
+      }
+    });
+
+    const colors = ['#FF5733', '#33FF57', '#3357FF', '#F3FF33', '#FF33F3', '#FF8C33'];
+    let selectedBody = null;
+    let currentSpeed = 0;
+    let targetSpeed = 0;
+    let isSpinKeyPressed = false;
+    let speedIncrementTimer = null;
+    let initialSpeed = 20;
+    const spinIncrement = 5;
+    const speedDisplay = document.getElementById('speed-display');
+    let blackHole = null;
+    let isBlackHoleActive = false;
+    let blackHoleForce = 0.001;
+    let blackHoleRange = 300;
+    let blackHoleSize = 30;
+    let bounciness = 0.7;
+    let floorFriction = 0;
+    let ground = null;
+    let gravityValue = 0;
+
+    function updateSpeedDisplay() {
+      speedDisplay.textContent = `Velocidade: ${Math.round(currentSpeed)}`;
+    }
+
+    function updateGravity(value) {
+      const gravityStrength = initialGravity.y * (1 - value);
+      engine.gravity.y = gravityStrength;
+      
+      const bodies = Composite.allBodies(engine.world);
+      bodies.forEach(body => {
+        if (!body.isStatic) {
+          Body.set(body, {
+            frictionAir: value === 1 ? 0 : 0.02
+          });
+        }
+      });
+    }
+
+    function createInitialObjects() {
+      const wallOptions = { isStatic: true, render: { fillStyle: '#444', strokeStyle: '#555' } };
+      ground = Bodies.rectangle(400, 590, 810, 20, { 
+        ...wallOptions,
+        restitution: bounciness,
+        friction: 1 - floorFriction
+      });
+      const leftWall = Bodies.rectangle(10, 300, 20, 600, wallOptions);
+      const rightWall = Bodies.rectangle(790, 300, 20, 600, wallOptions);
+      const ceiling = Bodies.rectangle(400, 10, 810, 20, wallOptions);
+      World.add(engine.world, [ground, leftWall, rightWall, ceiling]);
+    }
+
+    function createBall(x, y) {
+      const radius = 15 + Math.random() * 15;
+      const ball = Bodies.circle(x || Math.random() * 700 + 50, y || Math.random() * 400 + 50, radius, {
+        restitution: bounciness,
+        friction: 0.1,
+        frictionAir: gravityValue === 1 ? 0 : 0.02,
+        density: 0.05,
+        render: { fillStyle: colors[Math.floor(Math.random() * colors.length)], strokeStyle: '#000', lineWidth: 1 }
+      });
+      World.add(engine.world, ball);
+      return ball;
+    }
+
+    function createBox(x, y) {
+      const size = 20 + Math.random() * 30;
+      const box = Bodies.rectangle(x || Math.random() * 700 + 50, y || Math.random() * 400 + 50, size, size, {
+        restitution: bounciness,
+        friction: 0.2,
+        frictionAir: gravityValue === 1 ? 0 : 0.02,
+        density: 0.1,
+        render: { fillStyle: colors[Math.floor(Math.random() * colors.length)], strokeStyle: '#000', lineWidth: 1 }
+      });
+      World.add(engine.world, box);
+      return box;
+    }
+
+    function createTriangle(x, y) {
+      const size = 20 + Math.random() * 20;
+      const triangle = Bodies.fromVertices(
+        x || 400,
+        y || 300,
+        [[{ x: 0, y: -size }, { x: size, y: size }, { x: -size, y: size }]],
+        {
+          restitution: bounciness,
+          frictionAir: gravityValue === 1 ? 0 : 0.02,
+          density: 0.05,
+          render: { fillStyle: colors[Math.floor(Math.random() * colors.length)], strokeStyle: '#000', lineWidth: 1 }
+        },
+        true
+      );
+      World.add(engine.world, triangle);
+      return triangle;
+    }
+
+    function createBlackHole(x, y) {
+      blackHole = Bodies.circle(x, y, blackHoleSize, {
+        isStatic: true,
+        isSensor: true,
+        render: { fillStyle: '#000', strokeStyle: '#fff', lineWidth: 2 }
+      });
+      World.add(engine.world, blackHole);
+    }
+
+    function applyBlackHoleForce() {
+      if (!blackHole) return;
+      const bodies = Composite.allBodies(engine.world);
+      bodies.forEach(body => {
+        if (body === blackHole || body.isStatic) return;
+
+        const dx = blackHole.position.x - body.position.x;
+        const dy = blackHole.position.y - body.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < blackHoleRange) {
+          const forceMagnitude = blackHoleForce * body.mass;
+          const force = {
+            x: dx / distance * forceMagnitude,
+            y: dy / distance * forceMagnitude
+          };
+          Body.applyForce(body, body.position, force);
+        }
+
+        if (distance < blackHoleSize) {
+          World.remove(engine.world, body);
+        }
+      });
+    }
+
+    function startSpeedIncrement() {
+      if (speedIncrementTimer) return;
+      targetSpeed = initialSpeed;
+      currentSpeed = initialSpeed;
+      updateSpeedDisplay();
+      speedIncrementTimer = setInterval(() => { targetSpeed += spinIncrement; }, 1000);
+    }
+
+    function stopSpeedIncrement() {
+      if (speedIncrementTimer) {
+        clearInterval(speedIncrementTimer);
+        speedIncrementTimer = null;
+      }
+      targetSpeed = 0;
+      currentSpeed = 0;
+      updateSpeedDisplay();
+    }
+
+    function applySpin() {
+      if (!selectedBody || !isSpinKeyPressed) {
+        // Se não estiver girando ativamente, não faz nada
+        return;
+      }
+      
+      const smoothingFactor = 0.1;
+      currentSpeed += (targetSpeed - currentSpeed) * smoothingFactor;
+      const angularSpeed = currentSpeed * (Math.PI / 180);
+      Body.setAngularVelocity(selectedBody, angularSpeed);
+      updateSpeedDisplay();
+    }
+
+    function setupMouseInteraction() {
+      const mouse = Mouse.create(canvas);
+      const mouseConstraint = MouseConstraint.create(engine, {
+        mouse: mouse,
+        constraint: { stiffness: 0.2, render: { visible: false } }
+      });
+      World.add(engine.world, mouseConstraint);
+      Events.on(mouseConstraint, 'startdrag', function(event) {
+        selectedBody = event.body;
+        if (isSpinKeyPressed) {
+          startSpeedIncrement();
+        }
+      });
+      Events.on(mouseConstraint, 'enddrag', function(event) {
+        // Não faz nada ao soltar - o objeto mantém seu estado
+      });
+      render.mouse = mouse;
+    }
+
+    function setupKeyboardControls() {
+      document.addEventListener('keydown', function(event) {
+        const mousePosition = render.mouse?.position || { x: 400, y: 300 };
+        switch (event.key.toLowerCase()) {
+          case 'e': createBall(mousePosition.x, mousePosition.y); break;
+          case 'h': createBox(mousePosition.x, mousePosition.y); break;
+          case 'k': createTriangle(mousePosition.x, mousePosition.y); break;
+          case 's':
+            if (!isSpinKeyPressed) {
+              isSpinKeyPressed = true;
+              if (selectedBody) {
+                startSpeedIncrement();
+              }
+            }
+            break;
+          case 'b':
+            if (!isBlackHoleActive) {
+              isBlackHoleActive = true;
+              createBlackHole(mousePosition.x, mousePosition.y);
+            }
+            break;
+        }
+      });
+
+      document.addEventListener('keyup', function(event) {
+        switch (event.key.toLowerCase()) {
+          case 's':
+            isSpinKeyPressed = false;
+            stopSpeedIncrement();
+            if (selectedBody) {
+              Body.setAngularVelocity(selectedBody, 0); // Para a rotação
+            }
+            break;
+          case 'b':
+            isBlackHoleActive = false;
+            if (blackHole) {
+              World.remove(engine.world, blackHole);
+              blackHole = null;
+            }
+            break;
+        }
+      });
+    }
+
+    function updatePhysicsParameters() {
+      if (ground) {
+        Body.set(ground, {
+          restitution: bounciness,
+          friction: 1 - floorFriction
+        });
+      }
+      
+      const bodies = Composite.allBodies(engine.world);
+      bodies.forEach(body => {
+        if (body.isStatic) return;
+        Body.set(body, {
+          restitution: bounciness,
+          frictionAir: gravityValue === 1 ? 0 : 0.02
+        });
+      });
+    }
+
+    function customPhysics() {
+      if (isSpinKeyPressed && selectedBody) {
+        applySpin();
+      }
+      
+      if (isBlackHoleActive && blackHole) applyBlackHoleForce();
+      requestAnimationFrame(customPhysics);
+    }
+
+    // Config menu listeners
+    document.getElementById('gear-icon').addEventListener('click', () => {
+      document.getElementById('settings-menu').classList.toggle('hidden');
+    });
+
+    document.getElementById('force-slider').addEventListener('input', (e) => {
+      blackHoleForce = parseFloat(e.target.value);
+    });
+
+    document.getElementById('range-slider').addEventListener('input', (e) => {
+      blackHoleRange = parseFloat(e.target.value);
+    });
+
+    document.getElementById('size-slider').addEventListener('input', (e) => {
+      blackHoleSize = parseFloat(e.target.value);
+    });
+
+    document.getElementById('spin-start').addEventListener('input', (e) => {
+      initialSpeed = parseFloat(e.target.value);
+    });
+
+    document.getElementById('bounciness').addEventListener('input', (e) => {
+      bounciness = parseFloat(e.target.value);
+      updatePhysicsParameters();
+    });
+
+    document.getElementById('floor-friction').addEventListener('input', (e) => {
+      floorFriction = parseFloat(e.target.value);
+      updatePhysicsParameters();
+    });
+
+    document.getElementById('gravity-slider').addEventListener('input', (e) => {
+      gravityValue = parseFloat(e.target.value);
+      updateGravity(gravityValue);
+    });
+
+    createInitialObjects();
+    setupMouseInteraction();
+    setupKeyboardControls();
+    updateSpeedDisplay();
+    for (let i = 0; i < 3; i++) {
+      createBall();
+      createBox();
+    }
+    Engine.run(engine);
+    Render.run(render);
+    customPhysics();
+  </script>
+</body>
+</html>
