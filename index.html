@@ -137,25 +137,9 @@
       position: absolute;
       width: 10px;
       height: 10px;
+      background-color: red;
       border-radius: 50%;
       z-index: 5;
-    }
-
-    /* Estilo para diferentes times */
-    .team-red {
-      background-color: #FF4444;
-    }
-
-    .team-blue {
-      background-color: #4444FF;
-    }
-
-    .team-green {
-      background-color: #44FF44;
-    }
-
-    .team-yellow {
-      background-color: #FFFF44;
     }
   </style>
 </head>
@@ -170,12 +154,9 @@
       <p>K = Criar triângulo</p>
       <p>S = Girar objeto (segure para aumentar velocidade)</p>
       <p>B = Buraco negro (segure para ativar)</p>
-      <p>M = Criar bola atacante (Time Vermelho)</p>
-      <p>N = Criar quadrado atacante (Time Azul)</p>
-      <p>L = Criar triângulo atacante (Time Verde)</p>
-      <p>P = Criar bola atacante (Time Amarelo)</p>
-      <p>O = Criar quadrado atacante (Time Amarelo)</p>
-      <p>I = Criar triângulo atacante (Time Amarelo)</p>
+      <p>M = Criar bola atacante</p>
+      <p>N = Criar quadrado atacante</p>
+      <p>L = Criar triângulo atacante</p>
       <p>Arraste com mouse para mover</p>
     </div>
 
@@ -195,8 +176,7 @@
       <label>Fazer objetos atacantes seguirem: <input type="checkbox" id="attacker-follow"></label>
       <label>Dano por contato: <input type="number" id="damage-value" min="1" max="100" step="1" value="10"></label>
       <label>Vida máxima dos objetos: <input type="number" id="max-health" min="1" max="100" step="1" value="100"></label>
-      <label>Modo PvP (atacantes se atacam): <input type="checkbox" id="pvp-mode" checked></label>
-      <label>Sistema de times: <input type="checkbox" id="team-system" checked></label>
+      <label>Atacantes se atacam (PvP): <input type="checkbox" id="pvp-mode" checked></label>
     </div>
   </div>
 
@@ -221,9 +201,6 @@
     });
 
     const colors = ['#FF5733', '#33FF57', '#3357FF', '#F3FF33', '#FF33F3', '#FF8C33'];
-    const teamColors = ['#FF4444', '#4444FF', '#44FF44', '#FFFF44'];
-    const teamNames = ['red', 'blue', 'green', 'yellow'];
-    
     let selectedBody = null;
     let currentSpeed = 0;
     let targetSpeed = 0;
@@ -245,7 +222,6 @@
     let damageValue = 10;
     let maxHealth = 100;
     let pvpMode = true;
-    let teamSystem = true;
 
     // Objetos atacantes
     const attackers = [];
@@ -267,10 +243,6 @@
     
     document.getElementById('pvp-mode').addEventListener('change', function(e) {
       pvpMode = e.target.checked;
-    });
-    
-    document.getElementById('team-system').addEventListener('change', function(e) {
-      teamSystem = e.target.checked;
     });
 
     function updateSpeedDisplay() {
@@ -304,7 +276,7 @@
       World.add(engine.world, [ground, leftWall, rightWall, ceiling]);
     }
 
-    function createBall(x, y, isAttacker = false, teamIndex = 0) {
+    function createBall(x, y, isAttacker = false) {
       const radius = 15 + Math.random() * 15;
       const ball = Bodies.circle(x || Math.random() * 700 + 50, y || Math.random() * 400 + 50, radius, {
         restitution: bounciness,
@@ -312,7 +284,7 @@
         frictionAir: gravityValue === 1 ? 0 : 0.02,
         density: 0.05,
         render: { 
-          fillStyle: isAttacker ? teamColors[teamIndex] : colors[Math.floor(Math.random() * colors.length)], 
+          fillStyle: isAttacker ? '#FF0000' : colors[Math.floor(Math.random() * colors.length)], 
           strokeStyle: '#000', 
           lineWidth: 1 
         }
@@ -325,11 +297,10 @@
       
       // Se for atacante, adicionar indicador e registrar
       if (isAttacker) {
-        addAttackerIndicator(ball.id, ball.position.x, ball.position.y - radius - 20, teamIndex);
+        addAttackerIndicator(ball.id, ball.position.x, ball.position.y - radius - 20);
         attackers.push({
           body: ball,
           type: 'ball',
-          team: teamIndex,
           target: null,
           lastAttackTime: 0,
           attackCooldown: 1000 // 1 segundo de cooldown entre ataques
@@ -339,7 +310,7 @@
       return ball;
     }
 
-    function createBox(x, y, isAttacker = false, teamIndex = 0) {
+    function createBox(x, y, isAttacker = false) {
       const size = 20 + Math.random() * 30;
       const box = Bodies.rectangle(x || Math.random() * 700 + 50, y || Math.random() * 400 + 50, size, size, {
         restitution: bounciness,
@@ -347,7 +318,7 @@
         frictionAir: gravityValue === 1 ? 0 : 0.02,
         density: 0.1,
         render: { 
-          fillStyle: isAttacker ? teamColors[teamIndex] : colors[Math.floor(Math.random() * colors.length)], 
+          fillStyle: isAttacker ? '#FF0000' : colors[Math.floor(Math.random() * colors.length)], 
           strokeStyle: '#000', 
           lineWidth: 1 
         }
@@ -360,11 +331,10 @@
       
       // Se for atacante, adicionar indicador e registrar
       if (isAttacker) {
-        addAttackerIndicator(box.id, box.position.x, box.position.y - size/2 - 20, teamIndex);
+        addAttackerIndicator(box.id, box.position.x, box.position.y - size/2 - 20);
         attackers.push({
           body: box,
           type: 'box',
-          team: teamIndex,
           target: null,
           lastAttackTime: 0,
           attackCooldown: 1000 // 1 segundo de cooldown entre ataques
@@ -374,7 +344,7 @@
       return box;
     }
 
-    function createTriangle(x, y, isAttacker = false, teamIndex = 0) {
+    function createTriangle(x, y, isAttacker = false) {
       const size = 20 + Math.random() * 20;
       const triangle = Bodies.fromVertices(
         x || 400,
@@ -385,7 +355,7 @@
           frictionAir: gravityValue === 1 ? 0 : 0.02,
           density: 0.05,
           render: { 
-            fillStyle: isAttacker ? teamColors[teamIndex] : colors[Math.floor(Math.random() * colors.length)], 
+            fillStyle: isAttacker ? '#FF0000' : colors[Math.floor(Math.random() * colors.length)], 
             strokeStyle: '#000', 
             lineWidth: 1 
           }
@@ -400,11 +370,10 @@
       
       // Se for atacante, adicionar indicador e registrar
       if (isAttacker) {
-        addAttackerIndicator(triangle.id, triangle.position.x, triangle.position.y - size - 20, teamIndex);
+        addAttackerIndicator(triangle.id, triangle.position.x, triangle.position.y - size - 20);
         attackers.push({
           body: triangle,
           type: 'triangle',
-          team: teamIndex,
           target: null,
           lastAttackTime: 0,
           attackCooldown: 1000 // 1 segundo de cooldown entre ataques
@@ -436,9 +405,9 @@
       };
     }
 
-    function addAttackerIndicator(bodyId, x, y, teamIndex) {
+    function addAttackerIndicator(bodyId, x, y) {
       const indicator = document.createElement('div');
-      indicator.className = `attacker-indicator team-${teamNames[teamIndex]}`;
+      indicator.className = 'attacker-indicator';
       indicator.id = `indicator-${bodyId}`;
       indicator.style.left = `${x - 5}px`;
       indicator.style.top = `${y}px`;
@@ -632,12 +601,9 @@
           case 'e': createBall(mousePosition.x, mousePosition.y); break;
           case 'h': createBox(mousePosition.x, mousePosition.y); break;
           case 'k': createTriangle(mousePosition.x, mousePosition.y); break;
-          case 'm': createBall(mousePosition.x, mousePosition.y, true, 0); break; // Time Vermelho
-          case 'n': createBox(mousePosition.x, mousePosition.y, true, 1); break;  // Time Azul
-          case 'l': createTriangle(mousePosition.x, mousePosition.y, true, 2); break; // Time Verde
-          case 'p': createBall(mousePosition.x, mousePosition.y, true, 3); break; // Time Amarelo
-          case 'o': createBox(mousePosition.x, mousePosition.y, true, 3); break;  // Time Amarelo
-          case 'i': createTriangle(mousePosition.x, mousePosition.y, true, 3); break; // Time Amarelo
+          case 'm': createBall(mousePosition.x, mousePosition.y, true); break;
+          case 'n': createBox(mousePosition.x, mousePosition.y, true); break;
+          case 'l': createTriangle(mousePosition.x, mousePosition.y, true); break;
           case 's':
             if (!isSpinKeyPressed) {
               isSpinKeyPressed = true;
@@ -716,16 +682,8 @@
               let canAttack = false;
               
               if (attackerB) {
-                // Ambos são atacantes - verificar se podem se atacar
-                if (pvpMode) {
-                  if (teamSystem) {
-                    // Com sistema de times: só atacar se forem de times diferentes
-                    canAttack = attackerA.team !== attackerB.team;
-                  } else {
-                    // Sem sistema de times: sempre podem se atacar
-                    canAttack = true;
-                  }
-                }
+                // Ambos são atacantes - verificar se PvP está ativado
+                canAttack = pvpMode;
               } else {
                 // Atacante vs objeto normal - sempre pode atacar
                 canAttack = true;
@@ -754,16 +712,8 @@
               let canAttack = false;
               
               if (attackerA) {
-                // Ambos são atacantes - verificar se podem se atacar
-                if (pvpMode) {
-                  if (teamSystem) {
-                    // Com sistema de times: só atacar se forem de times diferentes
-                    canAttack = attackerB.team !== attackerA.team;
-                  } else {
-                    // Sem sistema de times: sempre podem se atacar
-                    canAttack = true;
-                  }
-                }
+                // Ambos são atacantes - verificar se PvP está ativado
+                canAttack = pvpMode;
               } else {
                 // Atacante vs objeto normal - sempre pode atacar
                 canAttack = true;
@@ -803,14 +753,8 @@
               let isValidTarget = false;
               
               if (targetAttacker) {
-                // É um atacante - verificar se pode atacar
-                if (pvpMode) {
-                  if (teamSystem) {
-                    isValidTarget = attacker.team !== targetAttacker.team;
-                  } else {
-                    isValidTarget = true;
-                  }
-                }
+                // É um atacante - verificar se PvP está ativado
+                isValidTarget = pvpMode;
               } else {
                 // É um objeto normal - sempre válido
                 isValidTarget = true;
