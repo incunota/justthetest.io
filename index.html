@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Playground de Física com Giro Contínuo</title>
+  <title>Playground de Física com Objetos Atacantes</title>
   <style>
     body {
       margin: 0;
@@ -101,6 +101,8 @@
       gap: 10px;
       z-index: 10;
       width: 220px;
+      max-height: 400px;
+      overflow-y: auto;
     }
 
     #settings-menu.hidden {
@@ -110,6 +112,34 @@
     #settings-menu label {
       display: flex;
       flex-direction: column;
+    }
+
+    /* Estilo para a barra de vida */
+    .health-bar {
+      position: absolute;
+      width: 40px;
+      height: 4px;
+      background-color: #333;
+      border: 1px solid #555;
+      border-radius: 2px;
+      z-index: 5;
+    }
+
+    .health-fill {
+      height: 100%;
+      background-color: #4CAF50;
+      border-radius: 1px;
+      transition: width 0.3s;
+    }
+
+    /* Indicador de objeto atacante */
+    .attacker-indicator {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background-color: red;
+      border-radius: 50%;
+      z-index: 5;
     }
   </style>
 </head>
@@ -124,6 +154,9 @@
       <p>K = Criar triângulo</p>
       <p>S = Girar objeto (segure para aumentar velocidade)</p>
       <p>B = Buraco negro (segure para ativar)</p>
+      <p>M = Criar bola atacante</p>
+      <p>N = Criar quadrado atacante</p>
+      <p>L = Criar triângulo atacante</p>
       <p>Arraste com mouse para mover</p>
     </div>
 
@@ -140,6 +173,9 @@
       <label>Nível de saltitante: <input type="range" id="bounciness" min="0" max="1" step="0.1" value="0.7"></label>
       <label>Chão escorregadio: <input type="range" id="floor-friction" min="0" max="1" step="0.1" value="0"></label>
       <label>Gravidade: <input type="range" id="gravity-slider" min="0" max="1" step="0.1" value="0"></label>
+      <label>Fazer objetos atacantes seguirem: <input type="checkbox" id="attacker-follow"></label>
+      <label>Dano por contato: <input type="number" id="damage-value" min="1" max="100" step="1" value="10"></label>
+      <label>Vida máxima dos objetos: <input type="number" id="max-health" min="1" max="100" step="1" value="100"></label>
     </div>
   </div>
 
@@ -181,6 +217,27 @@
     let floorFriction = 0;
     let ground = null;
     let gravityValue = 0;
+    let attackersFollow = false;
+    let damageValue = 10;
+    let maxHealth = 100;
+
+    // Objetos atacantes
+    const attackers = [];
+    const healthBars = {};
+    const attackerIndicators = {};
+
+    // Configurações iniciais
+    document.getElementById('attacker-follow').addEventListener('change', function(e) {
+      attackersFollow = e.target.checked;
+    });
+    
+    document.getElementById('damage-value').addEventListener('input', function(e) {
+      damageValue = parseInt(e.target.value);
+    });
+    
+    document.getElementById('max-health').addEventListener('input', function(e) {
+      maxHealth = parseInt(e.target.value);
+    });
 
     function updateSpeedDisplay() {
       speedDisplay.textContent = `Velocidade: ${Math.round(currentSpeed)}`;
@@ -213,33 +270,75 @@
       World.add(engine.world, [ground, leftWall, rightWall, ceiling]);
     }
 
-    function createBall(x, y) {
+    function createBall(x, y, isAttacker = false) {
       const radius = 15 + Math.random() * 15;
       const ball = Bodies.circle(x || Math.random() * 700 + 50, y || Math.random() * 400 + 50, radius, {
         restitution: bounciness,
         friction: 0.1,
         frictionAir: gravityValue === 1 ? 0 : 0.02,
         density: 0.05,
-        render: { fillStyle: colors[Math.floor(Math.random() * colors.length)], strokeStyle: '#000', lineWidth: 1 }
+        render: { 
+          fillStyle: isAttacker ? '#FF0000' : colors[Math.floor(Math.random() * colors.length)], 
+          strokeStyle: '#000', 
+          lineWidth: 1 
+        }
       });
+      
       World.add(engine.world, ball);
+      
+      // Adicionar barra de vida
+      addHealthBar(ball.id, ball.position.x, ball.position.y - radius - 10);
+      
+      // Se for atacante, adicionar indicador e registrar
+      if (isAttacker) {
+        addAttackerIndicator(ball.id, ball.position.x, ball.position.y - radius - 20);
+        attackers.push({
+          body: ball,
+          type: 'ball',
+          target: null,
+          lastAttackTime: 0,
+          attackCooldown: 1000 // 1 segundo de cooldown entre ataques
+        });
+      }
+      
       return ball;
     }
 
-    function createBox(x, y) {
+    function createBox(x, y, isAttacker = false) {
       const size = 20 + Math.random() * 30;
       const box = Bodies.rectangle(x || Math.random() * 700 + 50, y || Math.random() * 400 + 50, size, size, {
         restitution: bounciness,
         friction: 0.2,
         frictionAir: gravityValue === 1 ? 0 : 0.02,
         density: 0.1,
-        render: { fillStyle: colors[Math.floor(Math.random() * colors.length)], strokeStyle: '#000', lineWidth: 1 }
+        render: { 
+          fillStyle: isAttacker ? '#FF0000' : colors[Math.floor(Math.random() * colors.length)], 
+          strokeStyle: '#000', 
+          lineWidth: 1 
+        }
       });
+      
       World.add(engine.world, box);
+      
+      // Adicionar barra de vida
+      addHealthBar(box.id, box.position.x, box.position.y - size/2 - 10);
+      
+      // Se for atacante, adicionar indicador e registrar
+      if (isAttacker) {
+        addAttackerIndicator(box.id, box.position.x, box.position.y - size/2 - 20);
+        attackers.push({
+          body: box,
+          type: 'box',
+          target: null,
+          lastAttackTime: 0,
+          attackCooldown: 1000 // 1 segundo de cooldown entre ataques
+        });
+      }
+      
       return box;
     }
 
-    function createTriangle(x, y) {
+    function createTriangle(x, y, isAttacker = false) {
       const size = 20 + Math.random() * 20;
       const triangle = Bodies.fromVertices(
         x || 400,
@@ -249,12 +348,150 @@
           restitution: bounciness,
           frictionAir: gravityValue === 1 ? 0 : 0.02,
           density: 0.05,
-          render: { fillStyle: colors[Math.floor(Math.random() * colors.length)], strokeStyle: '#000', lineWidth: 1 }
+          render: { 
+            fillStyle: isAttacker ? '#FF0000' : colors[Math.floor(Math.random() * colors.length)], 
+            strokeStyle: '#000', 
+            lineWidth: 1 
+          }
         },
         true
       );
+      
       World.add(engine.world, triangle);
+      
+      // Adicionar barra de vida
+      addHealthBar(triangle.id, triangle.position.x, triangle.position.y - size - 10);
+      
+      // Se for atacante, adicionar indicador e registrar
+      if (isAttacker) {
+        addAttackerIndicator(triangle.id, triangle.position.x, triangle.position.y - size - 20);
+        attackers.push({
+          body: triangle,
+          type: 'triangle',
+          target: null,
+          lastAttackTime: 0,
+          attackCooldown: 1000 // 1 segundo de cooldown entre ataques
+        });
+      }
+      
       return triangle;
+    }
+
+    function addHealthBar(bodyId, x, y) {
+      const healthBar = document.createElement('div');
+      healthBar.className = 'health-bar';
+      healthBar.id = `health-${bodyId}`;
+      healthBar.style.left = `${x - 20}px`;
+      healthBar.style.top = `${y}px`;
+      
+      const healthFill = document.createElement('div');
+      healthFill.className = 'health-fill';
+      healthFill.style.width = '100%';
+      healthFill.id = `health-fill-${bodyId}`;
+      
+      healthBar.appendChild(healthFill);
+      document.getElementById('container').appendChild(healthBar);
+      
+      healthBars[bodyId] = {
+        element: healthBar,
+        fill: healthFill,
+        health: maxHealth
+      };
+    }
+
+    function addAttackerIndicator(bodyId, x, y) {
+      const indicator = document.createElement('div');
+      indicator.className = 'attacker-indicator';
+      indicator.id = `indicator-${bodyId}`;
+      indicator.style.left = `${x - 5}px`;
+      indicator.style.top = `${y}px`;
+      
+      document.getElementById('container').appendChild(indicator);
+      attackerIndicators[bodyId] = indicator;
+    }
+
+    function updateHealthBar(bodyId, damage) {
+      if (healthBars[bodyId]) {
+        healthBars[bodyId].health -= damage;
+        const healthPercent = (healthBars[bodyId].health / maxHealth) * 100;
+        healthBars[bodyId].fill.style.width = `${healthPercent}%`;
+        
+        // Mudar cor conforme a vida diminui
+        if (healthPercent > 60) {
+          healthBars[bodyId].fill.style.backgroundColor = '#4CAF50'; // Verde
+        } else if (healthPercent > 30) {
+          healthBars[bodyId].fill.style.backgroundColor = '#FFC107'; // Amarelo
+        } else {
+          healthBars[bodyId].fill.style.backgroundColor = '#F44336'; // Vermelho
+        }
+        
+        // Se a vida chegar a zero, remover o objeto
+        if (healthBars[bodyId].health <= 0) {
+          const body = Composite.allBodies(engine.world).find(b => b.id === bodyId);
+          if (body) {
+            World.remove(engine.world, body);
+            
+            // Remover do array de atacantes
+            const attackerIndex = attackers.findIndex(a => a.body.id === bodyId);
+            if (attackerIndex !== -1) {
+              attackers.splice(attackerIndex, 1);
+            }
+          }
+          
+          // Remover a barra de vida
+          healthBars[bodyId].element.remove();
+          delete healthBars[bodyId];
+          
+          // Remover indicador se existir
+          if (attackerIndicators[bodyId]) {
+            attackerIndicators[bodyId].remove();
+            delete attackerIndicators[bodyId];
+          }
+        }
+      }
+    }
+
+    function updateHealthBarPosition(bodyId, x, y) {
+      if (healthBars[bodyId]) {
+        const body = Composite.allBodies(engine.world).find(b => b.id === bodyId);
+        if (body) {
+          let offsetY = 0;
+          
+          if (body.circleRadius) {
+            offsetY = body.circleRadius + 10;
+          } else if (body.vertices) {
+            // Para triângulos e outras formas
+            const bounds = Matter.Bounds.create(body.vertices);
+            offsetY = (bounds.max.y - bounds.min.y) / 2 + 10;
+          } else {
+            // Para retângulos
+            offsetY = body.bounds.max.y - body.bounds.min.y + 10;
+          }
+          
+          healthBars[bodyId].element.style.left = `${x - 20}px`;
+          healthBars[bodyId].element.style.top = `${y - offsetY}px`;
+        }
+      }
+      
+      // Atualizar também o indicador de atacante
+      if (attackerIndicators[bodyId]) {
+        const body = Composite.allBodies(engine.world).find(b => b.id === bodyId);
+        if (body) {
+          let offsetY = 0;
+          
+          if (body.circleRadius) {
+            offsetY = body.circleRadius + 20;
+          } else if (body.vertices) {
+            const bounds = Matter.Bounds.create(body.vertices);
+            offsetY = (bounds.max.y - bounds.min.y) / 2 + 20;
+          } else {
+            offsetY = body.bounds.max.y - body.bounds.min.y + 20;
+          }
+          
+          attackerIndicators[bodyId].style.left = `${x - 5}px`;
+          attackerIndicators[bodyId].style.top = `${y - offsetY}px`;
+        }
+      }
     }
 
     function createBlackHole(x, y) {
@@ -286,6 +523,18 @@
 
         if (distance < blackHoleSize) {
           World.remove(engine.world, body);
+          
+          // Remover também a barra de vida
+          if (healthBars[body.id]) {
+            healthBars[body.id].element.remove();
+            delete healthBars[body.id];
+          }
+          
+          // Remover indicador se existir
+          if (attackerIndicators[body.id]) {
+            attackerIndicators[body.id].remove();
+            delete attackerIndicators[body.id];
+          }
         }
       });
     }
@@ -310,7 +559,6 @@
 
     function applySpin() {
       if (!selectedBody || !isSpinKeyPressed) {
-        // Se não estiver girando ativamente, não faz nada
         return;
       }
       
@@ -347,6 +595,9 @@
           case 'e': createBall(mousePosition.x, mousePosition.y); break;
           case 'h': createBox(mousePosition.x, mousePosition.y); break;
           case 'k': createTriangle(mousePosition.x, mousePosition.y); break;
+          case 'm': createBall(mousePosition.x, mousePosition.y, true); break;
+          case 'n': createBox(mousePosition.x, mousePosition.y, true); break;
+          case 'l': createTriangle(mousePosition.x, mousePosition.y, true); break;
           case 's':
             if (!isSpinKeyPressed) {
               isSpinKeyPressed = true;
@@ -370,7 +621,7 @@
             isSpinKeyPressed = false;
             stopSpeedIncrement();
             if (selectedBody) {
-              Body.setAngularVelocity(selectedBody, 0); // Para a rotação
+              Body.setAngularVelocity(selectedBody, 0);
             }
             break;
           case 'b':
@@ -402,12 +653,132 @@
       });
     }
 
+    // Detectar colisões e aplicar dano
+    function setupCollisionDetection() {
+      Events.on(engine, 'collisionStart', function(event) {
+        const pairs = event.pairs;
+        
+        for (let i = 0; i < pairs.length; i++) {
+          const pair = pairs[i];
+          const bodyA = pair.bodyA;
+          const bodyB = pair.bodyB;
+          
+          // Verificar se um dos corpos é um atacante
+          const attackerA = attackers.find(a => a.body.id === bodyA.id);
+          const attackerB = attackers.find(a => a.body.id === bodyB.id);
+          
+          // Aplicar dano se um dos corpos for atacante e o outro não
+          if (attackerA && !attackerB) {
+            // Verificar se o atacante pode atacar (cooldown)
+            const now = Date.now();
+            if (now - attackerA.lastAttackTime > attackerA.attackCooldown) {
+              attackerA.lastAttackTime = now;
+              updateHealthBar(bodyB.id, damageValue);
+              
+              // Aplicar uma pequena força para simular o impacto
+              const force = {
+                x: (bodyB.position.x - bodyA.position.x) * 0.01,
+                y: (bodyB.position.y - bodyA.position.y) * 0.01
+              };
+              Body.applyForce(bodyB, bodyB.position, force);
+            }
+          } else if (attackerB && !attackerA) {
+            // Verificar se o atacante pode atacar (cooldown)
+            const now = Date.now();
+            if (now - attackerB.lastAttackTime > attackerB.attackCooldown) {
+              attackerB.lastAttackTime = now;
+              updateHealthBar(bodyA.id, damageValue);
+              
+              // Aplicar uma pequena força para simular o impacto
+              const force = {
+                x: (bodyA.position.x - bodyB.position.x) * 0.01,
+                y: (bodyA.position.y - bodyB.position.y) * 0.01
+              };
+              Body.applyForce(bodyA, bodyA.position, force);
+            }
+          }
+        }
+      });
+    }
+
+    // Lógica para os atacantes seguirem outros objetos
+    function updateAttackers() {
+      attackers.forEach(attacker => {
+        // Seguir outros objetos se a opção estiver ativada
+        if (attackersFollow && !attacker.target) {
+          // Encontrar um alvo do mesmo formato
+          const bodies = Composite.allBodies(engine.world);
+          let closestTarget = null;
+          let closestDistance = Infinity;
+          
+          bodies.forEach(body => {
+            if (body !== attacker.body && !body.isStatic) {
+              let bodyType = '';
+              if (body.circleRadius) bodyType = 'ball';
+              else if (body.vertices && body.vertices.length === 3) bodyType = 'triangle';
+              else bodyType = 'box';
+              
+              if (bodyType === attacker.type) {
+                const dx = body.position.x - attacker.body.position.x;
+                const dy = body.position.y - attacker.body.position.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < closestDistance) {
+                  closestDistance = distance;
+                  closestTarget = body;
+                }
+              }
+            }
+          });
+          
+          if (closestTarget && closestDistance < 200) { // Alcance de detecção
+            attacker.target = closestTarget;
+          }
+        }
+        
+        // Mover em direção ao alvo
+        if (attacker.target) {
+          const dx = attacker.target.position.x - attacker.body.position.x;
+          const dy = attacker.target.position.y - attacker.body.position.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance > 30) { // Parar a uma certa distância
+            const force = {
+              x: dx / distance * 0.005,
+              y: dy / distance * 0.005
+            };
+            Body.applyForce(attacker.body, attacker.body.position, force);
+          } else if (distance > 200) {
+            // Se o alvo estiver muito longe, perder o rastreamento
+            attacker.target = null;
+          }
+        }
+      });
+    }
+
+    // Atualizar posições das barras de vida
+    function updateHealthBarPositions() {
+      const bodies = Composite.allBodies(engine.world);
+      bodies.forEach(body => {
+        if (healthBars[body.id]) {
+          updateHealthBarPosition(body.id, body.position.x, body.position.y);
+        }
+      });
+    }
+
     function customPhysics() {
       if (isSpinKeyPressed && selectedBody) {
         applySpin();
       }
       
       if (isBlackHoleActive && blackHole) applyBlackHoleForce();
+      
+      // Atualizar lógica dos atacantes
+      updateAttackers();
+      
+      // Atualizar posições das barras de vida
+      updateHealthBarPositions();
+      
       requestAnimationFrame(customPhysics);
     }
 
@@ -450,6 +821,7 @@
     createInitialObjects();
     setupMouseInteraction();
     setupKeyboardControls();
+    setupCollisionDetection();
     updateSpeedDisplay();
     for (let i = 0; i < 3; i++) {
       createBall();
